@@ -30,15 +30,14 @@ class TableOfContents:
 
 tableOfContents = TableOfContents()
 tableOfContents.add_tag("#содержание", 1916)
-tableOfContents.add_tag("#текст", 1917)
 tableOfContents.add_tag("#файлы", 1917)
-tableOfContents.add_tag("#взаимодействие", 1917)
-tableOfContents.add_tag("#оптимизация", 1920)
-tableOfContents.add_tag("#скрипты", 1921)
-tableOfContents.add_tag("#хихоз", 1922)
-tableOfContents.add_tag("#macos", 1923)
-tableOfContents.add_tag("#android", 1924)
-tableOfContents.add_tag("#android11", 1925)
+tableOfContents.add_tag("#текст", 1919)
+tableOfContents.add_tag("#взаимодействие", 1920)
+tableOfContents.add_tag("#оптимизация", 1921)
+tableOfContents.add_tag("#скрипты", 1922)
+tableOfContents.add_tag("#хихоз", 1923)
+tableOfContents.add_tag("#macos", 1924)
+tableOfContents.add_tag("#android", 1925)
 tableOfContents.add_tag("#desktop", 1926)
 tableOfContents.add_tag("#mobile", 1927)
 
@@ -64,6 +63,9 @@ class GroupOfTag:
         for i in range(len(self.headers)):
             self.links[self.ids[i]] = self.headers[i]
 
+    def add_header_to_links(self, header, id):
+        self.links[id] = header
+
     async def update_list(self):
         for id in self.links:
             line = "[" + str(self.links[id]) + \
@@ -73,9 +75,6 @@ class GroupOfTag:
         self.list = "\n".join(self.templist)
 
         await client.edit_message(CHANNEL, self.id, str("**" + self.title + "**") + "\n" + self.list)
-
-    def add_header_to_links(self, header, id):
-        self.links[id] = header
 
     def delete_headers_from_remove_list(self):
         for link in self.linksToRemove:
@@ -88,12 +87,20 @@ class HeaderMessage:
         self.url = CHANNEL + str(body.id)
         self.id = body.id
         self.header = body.message.splitlines()[0]
-        try:
-            self.tags = re.search(
-                # "#.+(?=\()", body.message).group(0)
-                "#.+(?= \()", body.message).group(0).split(" ")
-        except:
-            self.tags = []
+        self.tags = []
+        # try:
+        #     re.search(
+        #         "[(]", body.message)
+        #     self.tags = re.search(
+        #         "#(.*)(?= *\()", body.message).group(0)
+        #     self.tags = re.split("(?<=\S)\s+", self.tags)
+        #     print(self.tags)
+        # except:
+        self.tags = re.search(
+            "#\S[а-яА-Яa-zA-Z#\-\s\_]+", body.message).group(0)
+        self.tags = re.split("(?<=\S)\s+", self.tags)
+        # else:
+        # # self.tags = []
 
 
 @ client.on(events.MessageEdited(chats=(CHANNEL)))
@@ -118,7 +125,7 @@ async def handler(event):
                     # меняем заголовок
                     groupOfTag.links[id] = referencedMessage.header
 
-                if(groupOfTag.title.lower() != "#содержание"):  # игнорируем тег содержание
+                # if(groupOfTag.title.lower() != "#содержание"):  # игнорируем тег содержание
                     # есть ли в группе по тегу, в котором оно находится сейчас, упоминание сообщения
                     if(groupOfTag.title.lower() not in referencedMessage.tags):
                         groupOfTag.needsUpdate = True
@@ -151,17 +158,27 @@ async def normal_handler(event):
 
     newMessage = await client.get_messages(CHANNEL, ids=event.message.id)
     headerMessage = HeaderMessage(newMessage)
-    print(headerMessage.tags)
+    # print(headerMessage.tags)
 
     pattern = "🐸"
     if(re.search(pattern, headerMessage.header)):
         headerMessage.tags.append("#содержание")
-
+        print(headerMessage.tags)
         for tag in headerMessage.tags:  # раскидываем сообщение в группы, руководствуясь списком тегов
-            id = tableOfContents.tags[tag]
-            groupOfTag = GroupOfTag(await client.get_messages(CHANNEL, ids=id))
-            groupOfTag.add_header_to_links(
-                headerMessage.header, headerMessage.url)
-            await groupOfTag.update_list()
+            if(tag in tableOfContents.tags):
+                id = tableOfContents.tags[tag]
+                print(tag, id)
+                groupOfTag = GroupOfTag(await client.get_messages(CHANNEL, ids=id))
+                print(groupOfTag.title)
+                print(tag)
+                print(
+                    f"{groupOfTag.title}—{tag}—{str(headerMessage.id) not in groupOfTag.links}")
+                if(str(headerMessage.id) not in groupOfTag.links):
+                    groupOfTag.add_header_to_links(
+                        headerMessage.header, headerMessage.id)
+                    await groupOfTag.update_list()
+            else:
+                print("we have not this tag yet" + tag)
+                pass
 
 client.run_until_disconnected()
