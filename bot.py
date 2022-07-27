@@ -4,19 +4,18 @@ from telethon.tl.types import MessageEntityTextUrl
 import re
 
 config = configparser.ConfigParser()
-config.read("./config.ini")
+config.read("./conf.ini")
 
 # Вставляем api_id и api_hash
-api_id = config['Telegram']['api_id']
-api_hash = config['Telegram']['api_hash']
+API_ID = config['Telegram']['API_ID']
+API_HASH = config['Telegram']['API_HASH']
+CHANNEL = config['Telegram']['CHANNEL']
 
-client = TelegramClient('session_name', api_id, api_hash)
+client = TelegramClient('session_name', API_ID, API_HASH)
 # client = TelegramClient(None, api_id, api_hash)
 
 client.start()
-
 client.parse_mode = 'markdown'
-channel = "https://t.me/grzegorzkiselevwill"
 
 
 class TableOfContents:
@@ -68,12 +67,12 @@ class GroupOfTag:
     async def update_list(self):
         for id in self.links:
             line = "[" + str(self.links[id]) + \
-                "](https://t.me/grzegorzkiselevwill/" + str(id) + ")"
+                "](" + CHANNEL + str(id) + ")"
             self.templist.append(line)
 
         self.list = "\n".join(self.templist)
 
-        await client.edit_message(channel, self.id, str("**" + self.title + "**") + "\n" + self.list)
+        await client.edit_message(CHANNEL, self.id, str("**" + self.title + "**") + "\n" + self.list)
 
     def add_header_to_links(self, header, id):
         self.links[id] = header
@@ -86,71 +85,81 @@ class GroupOfTag:
 
 class HeaderMessage:
     def __init__(self, body):
-        self.url = "https://t.me/grzegorzkiselevwill/" + str(body.id)
+        self.url = CHANNEL + str(body.id)
         self.id = body.id
         self.header = body.message.splitlines()[0]
         try:
             self.tags = re.search(
-                "#[\s\S]*", body.message).group(0).split(" ")
+                # "#.+(?=\()", body.message).group(0)
+                "#.+(?= \()", body.message).group(0).split(" ")
         except:
             self.tags = []
 
 
-@ client.on(events.MessageEdited(chats=(channel)))
+@ client.on(events.MessageEdited(chats=(CHANNEL)))
 async def handler(event):
     print("acab")
     for id in tableOfContents.ids:
-        groupOfTag = GroupOfTag(await client.get_messages(channel, ids=id))
+        groupOfTag = GroupOfTag(await client.get_messages(CHANNEL, ids=id))
+        # для каждой ссылки, если сообщение еще живо, делаем проверки:
         for id in groupOfTag.links:
-            try:
-                referencedMessage = HeaderMessage(await client.get_messages(channel, ids=int(id)))
+            try:  # не удалено ли сообщение. если не удалено, то:
+                referencedMessage = HeaderMessage(await client.get_messages(CHANNEL, ids=int(id)))
                 pattern = "🐸"
+                # содержит ли сообщение идентификатор меню
                 if not(re.search(pattern, referencedMessage.header)):
                     groupOfTag.needsUpdate = True
-                    groupOfTag.linksToRemove.append(referencedMessage.id)
+                    groupOfTag.linksToRemove.append(
+                        referencedMessage.id)  # готовим к удалению
 
+                # актуален ли заголовок
                 if(groupOfTag.links[id] != referencedMessage.header):
                     groupOfTag.needsUpdate = True
+                    # меняем заголовок
                     groupOfTag.links[id] = referencedMessage.header
 
-                if(groupOfTag.title.lower() != "#содержание"):
+                if(groupOfTag.title.lower() != "#содержание"):  # игнорируем тег содержание
+                    # есть ли в группе по тегу, в котором оно находится сейчас, упоминание сообщения
                     if(groupOfTag.title.lower() not in referencedMessage.tags):
                         groupOfTag.needsUpdate = True
-                        groupOfTag.linksToRemove.append(referencedMessage.id)
+                        groupOfTag.linksToRemove.append(
+                            referencedMessage.id)  # готовим к удалению
 
-                for tag in referencedMessage.tags:
-                    targetMessageId = tableOfContents.tags[tag]
-                    targetGroup = GroupOfTag(await client.get_messages(channel, ids=int(targetMessageId)))
+                for tag in referencedMessage.tags:  # проверяем все теги каждого сообщения
+                    targetGroupId = tableOfContents.tags[tag]
+                    targetGroup = GroupOfTag(await client.get_messages(CHANNEL, ids=int(targetGroupId)))
 
+                    # если сообщения нет в группе по тегу
                     if(str(referencedMessage.id) not in targetGroup.links):
                         targetGroup.add_header_to_links(
-                            referencedMessage.header, referencedMessage.id)
-
-                        # await client.edit_message(channel, targetGroup.id, str(targetGroup.title) + "\n" + str(targetGroup.list))
-                        await targetGroup.update_list()
+                            referencedMessage.header, referencedMessage.id)  # если нет, то добавляем
+                        await targetGroup.update_list()  # пересобираем меню
 
             except:
                 groupOfTag.needsUpdate = True
+                # если ссылка мертва, готовим к удалению
                 groupOfTag.linksToRemove.append(str(id))
 
         if groupOfTag.needsUpdate:
+            # удаляем все, что в списке на удаление
             groupOfTag.delete_headers_from_remove_list()
-            await groupOfTag.update_list()
+            await groupOfTag.update_list()  # пересобираем меню
 
 
-@ client.on(events.NewMessage(chats=(channel)))
+@ client.on(events.NewMessage(chats=(CHANNEL)))
 async def normal_handler(event):
 
-    newMessage = await client.get_messages(channel, ids=event.message.id)
+    newMessage = await client.get_messages(CHANNEL, ids=event.message.id)
     headerMessage = HeaderMessage(newMessage)
+    print(headerMessage.tags)
 
     pattern = "🐸"
     if(re.search(pattern, headerMessage.header)):
         headerMessage.tags.append("#содержание")
 
-        for tag in headerMessage.tags:
+        for tag in headerMessage.tags:  # раскидываем сообщение в группы, руководствуясь списком тегов
             id = tableOfContents.tags[tag]
-            groupOfTag = GroupOfTag(await client.get_messages(channel, ids=id))
+            groupOfTag = GroupOfTag(await client.get_messages(CHANNEL, ids=id))
             groupOfTag.add_header_to_links(
                 headerMessage.header, headerMessage.url)
             await groupOfTag.update_list()
